@@ -24,8 +24,9 @@ class LexRankError(Exception):
 
 class Sentence(object):
 
-    def __init__(self, text, tokens=[], index=0):
+    def __init__(self, text, tokens=[], index=0, frame_inds=None):
         self.index = index
+        self.frame_inds = frame_inds
         self.text = text
         self.tokens = tokens
         self.counter = Counter(self.tokens)
@@ -103,19 +104,20 @@ class SentenceFactory(object):
             tokens.append("{}/{}".format(word, tag))
         return tokens
 
-    def text2sentences(self, text):
-        candidates = self.splitter(text.strip())
+    def text2sentences(self, candidates):
         sentences = []
         index = 0
-        for candidate in candidates:
-            while len(candidate) and (candidate[-1] == '.' or candidate[-1] == ' '):
-                candidate = candidate.strip(' ').strip('.')
+        special_characters = set(""" `~!@#$%^&*()-_+=[]{};:'",<.>/?|\\""")
+        for candidate, frame_inds in candidates:
+            while len(candidate) and candidate[-1] in special_characters:
+                for ch in special_characters:
+                    candidate = candidate.strip(ch)
             if not candidate:
                 continue
             tokens = self.text2tokens(candidate)
             if len(tokens) < self.min_token_length:
                 continue
-            sentence = Sentence(candidate, tokens, index)
+            sentence = Sentence(candidate, tokens, index, frame_inds)
             sentences.append(sentence)
             index += 1
         return sentences
@@ -173,8 +175,8 @@ class LexRank(object):
         self.matrix_smoothing = matrix_smoothing
         self.compactify = compactify
 
-    def summarize(self, text):
-        self.sentences = self.factory.text2sentences(text)
+    def summarize(self, sentences):
+        self.sentences = self.factory.text2sentences(sentences)
         self.num_sentences = len(self.sentences)
         self.corpus = SentenceCorpus(self.sentences, self.no_below_word_count, self.no_above_word_portion, self.max_dictionary_size)
         self.model = TfidfModel(self.corpus.bows, id2word=self.corpus.dictionary, normalize=True)
@@ -280,7 +282,7 @@ class LexRank(object):
 
     def _verbose(self):
         summaries = sorted(self.summaries, key=lambda sentence: sentence.index)
-        return [sentence.text for sentence in summaries]
+        return [(sentence.text, sentence.frame_inds) for sentence in summaries]
 
     def probe(self, k=None):
         if not hasattr(self, 'clusters'):
